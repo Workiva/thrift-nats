@@ -3,14 +3,25 @@ package thrift_nats
 import (
 	"log"
 	"runtime/debug"
+	"strconv"
+	"sync"
+	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
 )
 
+const (
+	heartbeatDeadlineMS = 5000
+	maxMissedHeartbeats = 3
+)
+
 type natsServer struct {
 	conn                   *nats.Conn
 	subject                string
+	clients                map[string]thrift.TTransport
+	mu                     sync.RWMutex
+	heartbeatDeadline      int64
 	quit                   chan struct{}
 	processorFactory       thrift.TProcessorFactory
 	serverTransport        *natsServerTransport
@@ -68,6 +79,8 @@ func NewNATSServerFactory7(
 	return &natsServer{
 		conn:                   conn,
 		subject:                subject,
+		heartbeatDeadline:      heartbeatDeadlineMS,
+		clients:                make(map[string]thrift.TTransport),
 		processorFactory:       processorFactory,
 		serverTransport:        newNATSServerTransport(conn),
 		inputTransportFactory:  inputTransportFactory,
@@ -115,9 +128,18 @@ func (n *natsServer) AcceptLoop() error {
 				log.Println("thrift_nats: error accepting client transport:", err)
 				return
 			}
-			if err := n.conn.PublishRequest(msg.Reply, listenTo, nil); err != nil {
+
+			heartbeat := nats.NewInbox()
+			n.mu.Lock()
+			n.clients[heartbeat] = client
+			n.mu.Unlock()
+
+			connectMsg := heartbeat + " " + strconv.FormatInt(n.heartbeatDeadline, 10)
+			if err := n.conn.PublishRequest(msg.Reply, listenTo, []byte(connectMsg)); err != nil {
 				log.Println("thrift_nats: error publishing transport inbox:", err)
-				client.Close()
+				n.remove(heartbeat)
+			} else {
+				go n.acceptHeartbeat(heartbeat)
 			}
 		}
 	})
@@ -127,6 +149,45 @@ func (n *natsServer) AcceptLoop() error {
 
 	<-n.quit
 	return sub.Unsubscribe()
+}
+
+func (n *natsServer) remove(heartbeat string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	client, ok := n.clients[heartbeat]
+	if !ok {
+		return
+	}
+	client.Close()
+	delete(n.clients, heartbeat)
+}
+
+func (n *natsServer) acceptHeartbeat(heartbeat string) {
+	missed := 0
+	recvHeartbeat := make(chan struct{})
+
+	sub, err := n.conn.Subscribe(heartbeat, func(msg *nats.Msg) {
+		recvHeartbeat <- struct{}{}
+	})
+	if err != nil {
+		log.Println("thrift_nats: error subscribing to heartbeat", heartbeat)
+		return
+	}
+
+	for {
+		select {
+		case <-time.After(time.Duration(n.heartbeatDeadline) * time.Millisecond):
+			missed += 1
+			if missed >= maxMissedHeartbeats {
+				log.Println("thrift_nats: client heartbeat expired")
+				n.remove(heartbeat)
+				sub.Unsubscribe()
+				return
+			}
+		case <-recvHeartbeat:
+			missed = 0
+		}
+	}
 }
 
 func (n *natsServer) accept(listenTo, replyTo string) (thrift.TTransport, error) {

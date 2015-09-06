@@ -2,31 +2,41 @@ package thrift_nats
 
 import (
 	"io"
+	"log"
+	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
 )
 
 type natsTransport struct {
-	conn     *nats.Conn
-	listenTo string
-	replyTo  string
-	sub      *nats.Subscription
-	reader   *io.PipeReader
-	writer   *io.PipeWriter
+	conn              *nats.Conn
+	listenTo          string
+	replyTo           string
+	heartbeat         string
+	heartbeatInterval time.Duration
+	sub               *nats.Subscription
+	closed            chan struct{}
+	reader            *io.PipeReader
+	writer            *io.PipeWriter
 }
 
 // NewNATSTransport returns a Thrift TTransport which uses the NATS messaging
 // system as the underlying transport. This TTransport can only be used with
 // NATSServer.
-func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string) thrift.TTransport {
+func NewNATSTransport(conn *nats.Conn, listenTo, replyTo, heartbeat string,
+	heartbeatInterval time.Duration) thrift.TTransport {
+
 	reader, writer := io.Pipe()
 	return &natsTransport{
-		conn:     conn,
-		listenTo: listenTo,
-		replyTo:  replyTo,
-		reader:   reader,
-		writer:   writer,
+		conn:              conn,
+		listenTo:          listenTo,
+		replyTo:           replyTo,
+		heartbeat:         heartbeat,
+		heartbeatInterval: heartbeatInterval,
+		closed:            make(chan struct{}),
+		reader:            reader,
+		writer:            writer,
 	}
 }
 
@@ -38,6 +48,9 @@ func (t *natsTransport) Open() error {
 		return thrift.NewTTransportExceptionFromError(err)
 	}
 	t.sub = sub
+	if t.heartbeatInterval > 0 {
+		go t.startHeartbeat()
+	}
 	return nil
 }
 
@@ -51,6 +64,9 @@ func (t *natsTransport) Close() error {
 	}
 	if err := t.sub.Unsubscribe(); err != nil {
 		return err
+	}
+	if t.heartbeatInterval > 0 {
+		t.closed <- struct{}{}
 	}
 	t.sub = nil
 	return nil
@@ -74,4 +90,17 @@ func (t *natsTransport) Flush() error {
 
 func (t *natsTransport) RemainingBytes() uint64 {
 	return 0
+}
+
+func (t *natsTransport) startHeartbeat() {
+	for {
+		select {
+		case <-time.After(t.heartbeatInterval):
+			if err := t.conn.Publish(t.heartbeat, nil); err != nil {
+				log.Println("thrift_nats: error sending heartbeat", err)
+			}
+		case <-t.closed:
+			return
+		}
+	}
 }

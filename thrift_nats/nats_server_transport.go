@@ -30,7 +30,7 @@ func (n *natsServerTransport) Accept() (thrift.TTransport, error) {
 }
 
 func (n *natsServerTransport) AcceptNATS(listenTo, replyTo string) thrift.TTransport {
-	return NewNATSTransport(n.conn, listenTo, replyTo)
+	return NewNATSTransport(n.conn, listenTo, replyTo, "", 0)
 }
 
 func (n *natsServerTransport) IsListening() bool {

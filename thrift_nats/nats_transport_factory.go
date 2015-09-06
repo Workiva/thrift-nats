@@ -2,6 +2,8 @@ package thrift_nats
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
@@ -14,32 +16,44 @@ import (
 func NATSTransportFactory(conn *nats.Conn, subject string,
 	timeout time.Duration) (thrift.TTransport, error) {
 
-	reply, inbox, err := request(conn, subject, timeout)
+	msg, inbox, err := request(conn, subject, timeout)
 	if err != nil {
 		return nil, err
 	}
-	if reply == "" {
-		return nil, errors.New("No reply subject")
+	if msg.Reply == "" {
+		return nil, errors.New("thrift_nats: no reply subject on connect")
 	}
 
-	return NewNATSTransport(conn, inbox, reply), nil
+	heartbeatAndDeadline := strings.Split(string(msg.Data), " ")
+	if len(heartbeatAndDeadline) != 2 {
+		return nil, errors.New("thrift_nats: invalid connect message")
+	}
+	heartbeat := heartbeatAndDeadline[0]
+	deadline, err := strconv.ParseInt(heartbeatAndDeadline[1], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	heartbeatDeadline := time.Duration(deadline) * time.Millisecond
+	interval := heartbeatDeadline - (heartbeatDeadline / 4)
+
+	return NewNATSTransport(conn, inbox, msg.Reply, heartbeat, interval), nil
 }
 
-func request(conn *nats.Conn, subj string, timeout time.Duration) (string, string, error) {
+func request(conn *nats.Conn, subj string, timeout time.Duration) (*nats.Msg, string, error) {
 	inbox := nats.NewInbox()
 	s, err := conn.Subscribe(inbox, nil)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 	s.AutoUnsubscribe(1)
 	err = conn.PublishRequest(subj, inbox, nil)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 	msg, err := s.NextMsg(timeout)
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
 	s.Unsubscribe()
-	return msg.Reply, inbox, nil
+	return msg, inbox, nil
 }
