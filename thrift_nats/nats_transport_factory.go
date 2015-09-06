@@ -2,8 +2,7 @@ package thrift_nats
 
 import (
 	"errors"
-	"strconv"
-	"strings"
+
 	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
@@ -24,19 +23,7 @@ func NATSTransportFactory(conn *nats.Conn, subject string,
 		return nil, errors.New("thrift_nats: no reply subject on connect")
 	}
 
-	heartbeatAndDeadline := strings.Split(string(msg.Data), " ")
-	if len(heartbeatAndDeadline) != 2 {
-		return nil, errors.New("thrift_nats: invalid connect message")
-	}
-	heartbeat := heartbeatAndDeadline[0]
-	deadline, err := strconv.ParseInt(heartbeatAndDeadline[1], 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	heartbeatDeadline := time.Duration(deadline) * time.Millisecond
-	interval := heartbeatDeadline - (heartbeatDeadline / 4)
-
-	return NewNATSTransport(conn, inbox, msg.Reply, heartbeat, interval, readTimeout), nil
+	return NewNATSTransport(conn, inbox, msg.Reply, readTimeout), nil
 }
 
 func request(conn *nats.Conn, subj string, timeout time.Duration) (*nats.Msg, string, error) {

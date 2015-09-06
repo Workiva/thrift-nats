@@ -6,6 +6,8 @@ import (
 	"io"
 	"runtime"
 	"time"
+
+	"git.apache.org/thrift.git/lib/go/thrift"
 )
 
 const bufferSize = 4096
@@ -20,7 +22,7 @@ func (t timeout) Timeout() bool {
 	return true
 }
 
-var ErrTimeout = timeout{}
+var ErrTimeout = thrift.NewTTransportExceptionFromError(timeout{})
 
 func main() {
 	fmt.Println("nothing happens")

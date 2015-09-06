@@ -21,6 +21,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
@@ -42,7 +43,7 @@ func runServer(transportFactory thrift.TTransportFactory, protocolFactory thrift
 
 	handler := NewCalculatorHandler()
 	processor := tutorial.NewCalculatorProcessor(handler)
-	server := thrift_nats.NewNATSServer5(conn, "foo", processor,
+	server := thrift_nats.NewNATSServer6(conn, "foo", 3*time.Second, processor,
 		transportFactory, protocolFactory)
 
 	fmt.Println("Starting the NATS server connecting to", addr)

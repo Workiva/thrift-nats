@@ -2,6 +2,7 @@ package thrift_nats
 
 import (
 	"errors"
+	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
@@ -29,8 +30,10 @@ func (n *natsServerTransport) Accept() (thrift.TTransport, error) {
 	return nil, errors.New("Use AcceptNATS")
 }
 
-func (n *natsServerTransport) AcceptNATS(listenTo, replyTo string) thrift.TTransport {
-	return NewNATSTransport(n.conn, listenTo, replyTo, "", 0, -1)
+func (n *natsServerTransport) AcceptNATS(listenTo, replyTo string,
+	timeout time.Duration) thrift.TTransport {
+
+	return NewNATSTransport(n.conn, listenTo, replyTo, timeout)
 }
 
 func (n *natsServerTransport) IsListening() bool {
