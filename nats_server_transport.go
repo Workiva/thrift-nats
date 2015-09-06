@@ -2,7 +2,6 @@ package thrift_nats
 
 import (
 	"errors"
-	"sync"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
@@ -10,39 +9,38 @@ import (
 
 var errTransportInterrupted = errors.New("Transport Interrupted")
 
-type TServerNATS struct {
+type natsServerTransport struct {
 	conn      *nats.Conn
 	accepted  chan struct{}
 	transport thrift.TTransport
-	mu        sync.RWMutex
 	listening bool
 }
 
-func NewTServerNATS(conn *nats.Conn) *TServerNATS {
-	return &TServerNATS{conn: conn}
+func newNATSServerTransport(conn *nats.Conn) *natsServerTransport {
+	return &natsServerTransport{conn: conn}
 }
 
-func (t *TServerNATS) Listen() error {
-	t.listening = true
+func (n *natsServerTransport) Listen() error {
+	n.listening = true
 	return nil
 }
 
-func (t *TServerNATS) Accept() (thrift.TTransport, error) {
+func (n *natsServerTransport) Accept() (thrift.TTransport, error) {
 	return nil, errors.New("Use AcceptNATS")
 }
 
-func (t *TServerNATS) AcceptNATS(listenTo, replyTo string) thrift.TTransport {
-	return NewTNATS(t.conn, listenTo, replyTo, 1024*1024)
+func (n *natsServerTransport) AcceptNATS(listenTo, replyTo string) thrift.TTransport {
+	return NewNATSTransport(n.conn, listenTo, replyTo)
 }
 
-func (t *TServerNATS) IsListening() bool {
-	return t.listening
+func (n *natsServerTransport) IsListening() bool {
+	return n.listening
 }
 
-func (t *TServerNATS) Close() error {
+func (n *natsServerTransport) Close() error {
 	return nil
 }
 
-func (t *TServerNATS) Interrupt() error {
+func (n *natsServerTransport) Interrupt() error {
 	return nil
 }

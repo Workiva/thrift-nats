@@ -4,34 +4,42 @@ import (
 	"errors"
 	"time"
 
+	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
 )
 
-func TNATSFactory(conn *nats.Conn, subject string, timeout time.Duration) (*TNATS, error) {
-	msg, inbox, err := request(conn, subject, timeout)
+// NATSTransportFactory returns a new thrift TTransport which uses the NATS
+// messaging system as the underlying transport. This TTransport can only be
+// used with NATSServer.
+func NATSTransportFactory(conn *nats.Conn, subject string,
+	timeout time.Duration) (thrift.TTransport, error) {
+
+	reply, inbox, err := request(conn, subject, timeout)
 	if err != nil {
 		return nil, err
 	}
-	if msg.Reply == "" {
+	if reply == "" {
 		return nil, errors.New("No reply subject")
 	}
 
-	return NewTNATS(conn, inbox, msg.Reply, 1024*1024), nil
+	return NewNATSTransport(conn, inbox, reply), nil
 }
 
-func request(conn *nats.Conn, subj string, timeout time.Duration) (m *nats.Msg,
-	inbox string, err error) {
-
-	inbox = nats.NewInbox()
+func request(conn *nats.Conn, subj string, timeout time.Duration) (string, string, error) {
+	inbox := nats.NewInbox()
 	s, err := conn.Subscribe(inbox, nil)
 	if err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	s.AutoUnsubscribe(1)
 	err = conn.PublishRequest(subj, inbox, nil)
-	if err == nil {
-		m, err = s.NextMsg(timeout)
+	if err != nil {
+		return "", "", err
+	}
+	msg, err := s.NextMsg(timeout)
+	if err != nil {
+		return "", "", err
 	}
 	s.Unsubscribe()
-	return
+	return msg.Reply, inbox, nil
 }

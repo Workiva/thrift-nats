@@ -8,49 +8,47 @@ import (
 	"github.com/nats-io/nats"
 )
 
-type TNATSServer struct {
+type natsServer struct {
 	conn                   *nats.Conn
 	subject                string
 	quit                   chan struct{}
 	processorFactory       thrift.TProcessorFactory
-	serverTransport        *TServerNATS
+	serverTransport        *natsServerTransport
 	inputTransportFactory  thrift.TTransportFactory
 	outputTransportFactory thrift.TTransportFactory
 	inputProtocolFactory   thrift.TProtocolFactory
 	outputProtocolFactory  thrift.TProtocolFactory
 }
 
-func NewTNATSServer6(
+// NewNATSServer5 returns a Thrift TServer which uses the NATS messaging
+// system as the underlying transport.
+func NewNATSServer5(
 	conn *nats.Conn,
 	subject string,
 	processor thrift.TProcessor,
-	serverTransport *TServerNATS,
 	transportFactory thrift.TTransportFactory,
-	protocolFactory thrift.TProtocolFactory) *TNATSServer {
+	protocolFactory thrift.TProtocolFactory) thrift.TServer {
 
-	return NewTNATSServerFactory6(
+	return NewNATSServerFactory5(
 		conn,
 		subject,
 		thrift.NewTProcessorFactory(processor),
-		serverTransport,
 		transportFactory,
 		protocolFactory,
 	)
 }
 
-func NewTNATSServerFactory6(
+func NewNATSServerFactory5(
 	conn *nats.Conn,
 	subject string,
 	processorFactory thrift.TProcessorFactory,
-	serverTransport *TServerNATS,
 	transportFactory thrift.TTransportFactory,
-	protocolFactory thrift.TProtocolFactory) *TNATSServer {
+	protocolFactory thrift.TProtocolFactory) thrift.TServer {
 
-	return NewTNATSServerFactory8(
+	return NewNATSServerFactory7(
 		conn,
 		subject,
 		processorFactory,
-		serverTransport,
 		transportFactory,
 		transportFactory,
 		protocolFactory,
@@ -58,21 +56,20 @@ func NewTNATSServerFactory6(
 	)
 }
 
-func NewTNATSServerFactory8(
+func NewNATSServerFactory7(
 	conn *nats.Conn,
 	subject string,
 	processorFactory thrift.TProcessorFactory,
-	serverTransport *TServerNATS,
 	inputTransportFactory thrift.TTransportFactory,
 	outputTransportFactory thrift.TTransportFactory,
 	inputProtocolFactory thrift.TProtocolFactory,
-	outputProtocolFactory thrift.TProtocolFactory) *TNATSServer {
+	outputProtocolFactory thrift.TProtocolFactory) thrift.TServer {
 
-	return &TNATSServer{
+	return &natsServer{
 		conn:                   conn,
 		subject:                subject,
 		processorFactory:       processorFactory,
-		serverTransport:        serverTransport,
+		serverTransport:        newNATSServerTransport(conn),
 		inputTransportFactory:  inputTransportFactory,
 		outputTransportFactory: outputTransportFactory,
 		inputProtocolFactory:   inputProtocolFactory,
@@ -81,40 +78,46 @@ func NewTNATSServerFactory8(
 	}
 }
 
-func (p *TNATSServer) ProcessorFactory() thrift.TProcessorFactory {
-	return p.processorFactory
+func (n *natsServer) ProcessorFactory() thrift.TProcessorFactory {
+	return n.processorFactory
 }
 
-func (p *TNATSServer) ServerTransport() thrift.TServerTransport {
-	return p.serverTransport
+func (n *natsServer) ServerTransport() thrift.TServerTransport {
+	return n.serverTransport
 }
 
-func (p *TNATSServer) InputTransportFactory() thrift.TTransportFactory {
-	return p.inputTransportFactory
+func (n *natsServer) InputTransportFactory() thrift.TTransportFactory {
+	return n.inputTransportFactory
 }
 
-func (p *TNATSServer) OutputTransportFactory() thrift.TTransportFactory {
-	return p.outputTransportFactory
+func (n *natsServer) OutputTransportFactory() thrift.TTransportFactory {
+	return n.outputTransportFactory
 }
 
-func (p *TNATSServer) InputProtocolFactory() thrift.TProtocolFactory {
-	return p.inputProtocolFactory
+func (n *natsServer) InputProtocolFactory() thrift.TProtocolFactory {
+	return n.inputProtocolFactory
 }
 
-func (p *TNATSServer) OutputProtocolFactory() thrift.TProtocolFactory {
-	return p.outputProtocolFactory
+func (n *natsServer) OutputProtocolFactory() thrift.TProtocolFactory {
+	return n.outputProtocolFactory
 }
 
-func (p *TNATSServer) Listen() error {
-	return p.serverTransport.Listen()
+func (n *natsServer) Listen() error {
+	return n.serverTransport.Listen()
 }
 
-func (p *TNATSServer) AcceptLoop() error {
-	sub, err := p.conn.Subscribe(p.subject, func(msg *nats.Msg) {
+func (n *natsServer) AcceptLoop() error {
+	sub, err := n.conn.Subscribe(n.subject, func(msg *nats.Msg) {
 		if msg.Reply != "" {
 			listenTo := nats.NewInbox()
-			if err := p.conn.PublishRequest(msg.Reply, listenTo, nil); err == nil {
-				p.accept(listenTo, msg.Reply)
+			client, err := n.accept(listenTo, msg.Reply)
+			if err != nil {
+				log.Println("thrift_nats: error accepting client transport:", err)
+				return
+			}
+			if err := n.conn.PublishRequest(msg.Reply, listenTo, nil); err != nil {
+				log.Println("thrift_nats: error publishing transport inbox:", err)
+				client.Close()
 			}
 		}
 	})
@@ -122,40 +125,43 @@ func (p *TNATSServer) AcceptLoop() error {
 		return err
 	}
 
-	<-p.quit
+	<-n.quit
 	return sub.Unsubscribe()
 }
 
-func (p *TNATSServer) accept(listenTo, replyTo string) {
-	client := p.serverTransport.AcceptNATS(listenTo, replyTo)
+func (n *natsServer) accept(listenTo, replyTo string) (thrift.TTransport, error) {
+	client := n.serverTransport.AcceptNATS(listenTo, replyTo)
 	if err := client.Open(); err != nil {
-		log.Println("error opening client transport:", err)
+		return nil, err
 	}
-	if err := p.processRequests(client); err != nil {
-		log.Println("error processing request:", err)
-	}
+	go func() {
+		if err := n.processRequests(client); err != nil {
+			log.Println("thrift_nats: error processing request:", err)
+		}
+	}()
+	return client, nil
 }
 
-func (p *TNATSServer) Serve() error {
-	if err := p.Listen(); err != nil {
+func (n *natsServer) Serve() error {
+	if err := n.Listen(); err != nil {
 		return err
 	}
-	p.AcceptLoop()
+	n.AcceptLoop()
 	return nil
 }
 
-func (p *TNATSServer) Stop() error {
-	p.quit <- struct{}{}
-	p.serverTransport.Interrupt()
+func (n *natsServer) Stop() error {
+	n.quit <- struct{}{}
+	n.serverTransport.Interrupt()
 	return nil
 }
 
-func (p *TNATSServer) processRequests(client thrift.TTransport) error {
-	processor := p.processorFactory.GetProcessor(client)
-	inputTransport := p.inputTransportFactory.GetTransport(client)
-	outputTransport := p.outputTransportFactory.GetTransport(client)
-	inputProtocol := p.inputProtocolFactory.GetProtocol(inputTransport)
-	outputProtocol := p.outputProtocolFactory.GetProtocol(outputTransport)
+func (n *natsServer) processRequests(client thrift.TTransport) error {
+	processor := n.processorFactory.GetProcessor(client)
+	inputTransport := n.inputTransportFactory.GetTransport(client)
+	outputTransport := n.outputTransportFactory.GetTransport(client)
+	inputProtocol := n.inputProtocolFactory.GetProtocol(inputTransport)
+	outputProtocol := n.outputProtocolFactory.GetProtocol(outputTransport)
 	defer func() {
 		if e := recover(); e != nil {
 			log.Printf("panic in processor: %s: %s", e, debug.Stack())
