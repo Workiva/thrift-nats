@@ -29,13 +29,13 @@ import (
 	"github.com/tylertreat/thrift-nats/thrift_nats"
 )
 
-func runServer(transportFactory thrift.TTransportFactory, protocolFactory thrift.TProtocolFactory, addr string, secure bool) error {
+func runServer(transportFactory thrift.TTransportFactory,
+	protocolFactory thrift.TProtocolFactory, addr string, secure bool) error {
+
 	var err error
 	opts := nats.DefaultOptions
 	opts.Servers = []string{addr}
-	if secure {
-		opts.Secure = true
-	}
+	opts.Secure = secure
 	conn, err := opts.Connect()
 	if err != nil {
 		return err

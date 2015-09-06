@@ -89,25 +89,27 @@ func handleClient(client *tutorial.CalculatorClient) (err error) {
 	return err
 }
 
-func runClient(transportFactory thrift.TTransportFactory, protocolFactory thrift.TProtocolFactory, addr string, secure bool) error {
-	var transport thrift.TTransport
+func runClient(transportFactory thrift.TTransportFactory,
+	protocolFactory thrift.TProtocolFactory, addr string, secure bool) error {
+
 	opts := nats.DefaultOptions
 	opts.Servers = []string{addr}
-	if secure {
-		opts.Secure = true
-	}
+	opts.Secure = secure
 	conn, err := opts.Connect()
 	if err != nil {
 		return err
 	}
-	transport, err = thrift_nats.NATSTransportFactory(conn, "foo", time.Second, time.Second)
+
+	transport, err := thrift_nats.NATSTransportFactory(conn, "foo", time.Second, time.Second)
 	if err != nil {
 		return err
 	}
 	transport = transportFactory.GetTransport(transport)
+
 	defer transport.Close()
 	if err := transport.Open(); err != nil {
 		return err
 	}
+
 	return handleClient(tutorial.NewCalculatorClientFactory(transport, protocolFactory))
 }
