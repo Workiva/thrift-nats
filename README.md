@@ -1,2 +1,3 @@
 # thrift-nats
-Thrift RPC over NATS.
+
+Prototype for implementing [NATS](http://nats.io/) as a [Thrift](https://thrift.apache.org/) RPC transport.
