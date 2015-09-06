@@ -14,7 +14,7 @@ import (
 // messaging system as the underlying transport. This TTransport can only be
 // used with NATSServer.
 func NATSTransportFactory(conn *nats.Conn, subject string,
-	timeout time.Duration) (thrift.TTransport, error) {
+	timeout, readTimeout time.Duration) (thrift.TTransport, error) {
 
 	msg, inbox, err := request(conn, subject, timeout)
 	if err != nil {
@@ -36,7 +36,7 @@ func NATSTransportFactory(conn *nats.Conn, subject string,
 	heartbeatDeadline := time.Duration(deadline) * time.Millisecond
 	interval := heartbeatDeadline - (heartbeatDeadline / 4)
 
-	return NewNATSTransport(conn, inbox, msg.Reply, heartbeat, interval), nil
+	return NewNATSTransport(conn, inbox, msg.Reply, heartbeat, interval, readTimeout), nil
 }
 
 func request(conn *nats.Conn, subj string, timeout time.Duration) (*nats.Msg, string, error) {

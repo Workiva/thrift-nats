@@ -33,7 +33,17 @@ func handleClient(client *tutorial.CalculatorClient) (err error) {
 	client.Ping()
 	fmt.Println("ping()")
 
-	sum, _ := client.Add(1, 1)
+	sum, err := client.Add(1, 1)
+	if err != nil {
+		switch v := err.(type) {
+		case *tutorial.InvalidOperation:
+			fmt.Println("Invalid operation:", v)
+		default:
+			fmt.Println("Error during operation:", err)
+		}
+		return err
+	}
+
 	fmt.Print("1+1=", sum, "\n")
 
 	work := tutorial.NewWork()
@@ -90,7 +100,7 @@ func runClient(transportFactory thrift.TTransportFactory, protocolFactory thrift
 	if err != nil {
 		return err
 	}
-	transport, err = thrift_nats.NATSTransportFactory(conn, "foo", time.Second)
+	transport, err = thrift_nats.NATSTransportFactory(conn, "foo", time.Second, time.Second)
 	if err != nil {
 		return err
 	}

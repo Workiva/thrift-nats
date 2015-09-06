@@ -17,7 +17,7 @@ type natsTransport struct {
 	heartbeatInterval time.Duration
 	sub               *nats.Subscription
 	closed            chan struct{}
-	reader            *io.PipeReader
+	reader            *TimeoutReader
 	writer            *io.PipeWriter
 }
 
@@ -25,9 +25,11 @@ type natsTransport struct {
 // system as the underlying transport. This TTransport can only be used with
 // NATSServer.
 func NewNATSTransport(conn *nats.Conn, listenTo, replyTo, heartbeat string,
-	heartbeatInterval time.Duration) thrift.TTransport {
+	heartbeatInterval, readTimeout time.Duration) thrift.TTransport {
 
 	reader, writer := io.Pipe()
+	timeoutReader := NewTimeoutReader(reader)
+	timeoutReader.SetTimeout(readTimeout)
 	return &natsTransport{
 		conn:              conn,
 		listenTo:          listenTo,
@@ -35,7 +37,7 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo, heartbeat string,
 		heartbeat:         heartbeat,
 		heartbeatInterval: heartbeatInterval,
 		closed:            make(chan struct{}),
-		reader:            reader,
+		reader:            timeoutReader,
 		writer:            writer,
 	}
 }
@@ -73,8 +75,7 @@ func (t *natsTransport) Close() error {
 }
 
 func (t *natsTransport) Read(p []byte) (int, error) {
-	n, err := t.reader.Read(p)
-	return n, err
+	return t.reader.Read(p)
 }
 
 func (t *natsTransport) Write(p []byte) (int, error) {
