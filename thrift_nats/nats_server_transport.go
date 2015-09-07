@@ -8,8 +8,6 @@ import (
 	"github.com/nats-io/nats"
 )
 
-var errTransportInterrupted = errors.New("Transport Interrupted")
-
 type natsServerTransport struct {
 	conn      *nats.Conn
 	accepted  chan struct{}
