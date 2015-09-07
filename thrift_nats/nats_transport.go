@@ -8,6 +8,8 @@ import (
 	"github.com/nats-io/nats"
 )
 
+const disconnect = "DISCONNECT"
+
 type natsTransport struct {
 	conn     *nats.Conn
 	listenTo string
@@ -37,6 +39,10 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string,
 
 func (t *natsTransport) Open() error {
 	sub, err := t.conn.Subscribe(t.listenTo, func(msg *nats.Msg) {
+		if msg.Reply == disconnect {
+			t.writer.Close()
+			return
+		}
 		t.writer.Write(msg.Data)
 	})
 	if err != nil {
@@ -54,6 +60,7 @@ func (t *natsTransport) Close() error {
 	if !t.IsOpen() {
 		return nil
 	}
+	t.conn.PublishRequest(t.replyTo, disconnect, nil)
 	if err := t.sub.Unsubscribe(); err != nil {
 		return err
 	}
@@ -62,7 +69,8 @@ func (t *natsTransport) Close() error {
 }
 
 func (t *natsTransport) Read(p []byte) (int, error) {
-	return t.reader.Read(p)
+	n, err := t.reader.Read(p)
+	return n, thrift.NewTTransportExceptionFromError(err)
 }
 
 func (t *natsTransport) Write(p []byte) (int, error) {
