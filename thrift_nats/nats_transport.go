@@ -15,7 +15,7 @@ type natsTransport struct {
 	listenTo string
 	replyTo  string
 	sub      *nats.Subscription
-	reader   *TimeoutReader
+	reader   *timeoutReader
 	writer   *io.PipeWriter
 }
 
@@ -26,7 +26,7 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string,
 	readTimeout time.Duration) thrift.TTransport {
 
 	reader, writer := io.Pipe()
-	timeoutReader := NewTimeoutReader(reader)
+	timeoutReader := newTimeoutReader(reader)
 	timeoutReader.SetTimeout(readTimeout)
 	return &natsTransport{
 		conn:     conn,

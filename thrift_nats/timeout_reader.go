@@ -2,7 +2,6 @@ package thrift_nats
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"runtime"
 	"time"
@@ -22,34 +21,25 @@ func (t timeout) Timeout() bool {
 	return true
 }
 
-var ErrTimeout = thrift.NewTTransportExceptionFromError(timeout{})
+var errTimeout = thrift.NewTTransportExceptionFromError(timeout{})
 
-func main() {
-	fmt.Println("nothing happens")
-}
-
-type TimeoutReader struct {
+type timeoutReader struct {
 	buff    *bufio.Reader
 	timeout time.Duration
 	ch      <-chan error
 }
 
-func NewTimeoutReader(r io.Reader) *TimeoutReader {
-	return &TimeoutReader{buff: bufio.NewReaderSize(r, bufferSize), timeout: -1}
+func newTimeoutReader(r io.Reader) *timeoutReader {
+	return &timeoutReader{buff: bufio.NewReaderSize(r, bufferSize), timeout: -1}
 }
 
-// SetTimeout sets the timeout for all future Read calls as follows:
-//
-// 	t < 0  -- block
-// 	t == 0 -- poll
-// 	t > 0  -- timeout after t
-func (r *TimeoutReader) SetTimeout(t time.Duration) time.Duration {
+func (r *timeoutReader) SetTimeout(t time.Duration) time.Duration {
 	prev := r.timeout
 	r.timeout = t
 	return prev
 }
 
-func (r *TimeoutReader) Read(b []byte) (n int, err error) {
+func (r *timeoutReader) Read(b []byte) (n int, err error) {
 	if r.ch == nil {
 		if r.timeout < 0 || r.buff.Buffered() > 0 {
 			return r.buff.Read(b)
@@ -63,18 +53,18 @@ func (r *TimeoutReader) Read(b []byte) (n int, err error) {
 		runtime.Gosched()
 	}
 	if r.timeout < 0 {
-		err = <-r.ch // Block
+		err = <-r.ch
 	} else {
 		select {
-		case err = <-r.ch: // Poll
+		case err = <-r.ch:
 		default:
 			if r.timeout == 0 {
-				return 0, ErrTimeout
+				return 0, errTimeout
 			}
 			select {
-			case err = <-r.ch: // Timeout
+			case err = <-r.ch:
 			case <-time.After(r.timeout):
-				return 0, ErrTimeout
+				return 0, errTimeout
 			}
 		}
 	}
