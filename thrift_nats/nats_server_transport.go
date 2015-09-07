@@ -10,8 +10,6 @@ import (
 
 type natsServerTransport struct {
 	conn      *nats.Conn
-	accepted  chan struct{}
-	transport thrift.TTransport
 	listening bool
 }
 
@@ -39,6 +37,7 @@ func (n *natsServerTransport) IsListening() bool {
 }
 
 func (n *natsServerTransport) Close() error {
+	n.listening = false
 	return nil
 }
 
