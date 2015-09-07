@@ -15,32 +15,32 @@ import (
 func NATSTransportFactory(conn *nats.Conn, subject string,
 	timeout, readTimeout time.Duration) (thrift.TTransport, error) {
 
-	msg, inbox, err := request(conn, subject, timeout)
+	reply, inbox, err := connect(conn, subject, timeout)
 	if err != nil {
 		return nil, err
 	}
-	if msg.Reply == "" {
+	if reply == "" {
 		return nil, errors.New("thrift_nats: no reply subject on connect")
 	}
 
-	return NewNATSTransport(conn, inbox, msg.Reply, readTimeout), nil
+	return NewNATSTransport(conn, inbox, reply, readTimeout), nil
 }
 
-func request(conn *nats.Conn, subj string, timeout time.Duration) (*nats.Msg, string, error) {
+func connect(conn *nats.Conn, subj string, timeout time.Duration) (string, string, error) {
 	inbox := nats.NewInbox()
 	s, err := conn.Subscribe(inbox, nil)
 	if err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	s.AutoUnsubscribe(1)
 	err = conn.PublishRequest(subj, inbox, nil)
 	if err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	msg, err := s.NextMsg(timeout)
 	if err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	s.Unsubscribe()
-	return msg, inbox, nil
+	return msg.Reply, inbox, nil
 }
