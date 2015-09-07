@@ -99,6 +99,7 @@ func runClient(transportFactory thrift.TTransportFactory,
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
 	transport, err := thrift_nats.NATSTransportFactory(conn, "foo", time.Second, time.Second)
 	if err != nil {
