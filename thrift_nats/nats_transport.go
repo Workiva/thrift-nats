@@ -17,13 +17,14 @@ type natsTransport struct {
 	sub      *nats.Subscription
 	reader   *timeoutReader
 	writer   *io.PipeWriter
+	server   bool
 }
 
 // NewNATSTransport returns a Thrift TTransport which uses the NATS messaging
 // system as the underlying transport. This TTransport can only be used with
 // NATSServer.
 func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string,
-	readTimeout time.Duration) thrift.TTransport {
+	readTimeout time.Duration, server bool) thrift.TTransport {
 
 	reader, writer := io.Pipe()
 	timeoutReader := newTimeoutReader(reader)
@@ -34,13 +35,15 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string,
 		replyTo:  replyTo,
 		reader:   timeoutReader,
 		writer:   writer,
+		server:   server,
 	}
 }
 
 func (t *natsTransport) Open() error {
 	sub, err := t.conn.Subscribe(t.listenTo, func(msg *nats.Msg) {
 		if msg.Reply == disconnect {
-			t.writer.Close()
+			// Remote client is disconnecting.
+			t.Close()
 			return
 		}
 		t.writer.Write(msg.Data)
@@ -48,6 +51,7 @@ func (t *natsTransport) Open() error {
 	if err != nil {
 		return thrift.NewTTransportExceptionFromError(err)
 	}
+	t.conn.Flush() // Ensure subscription is processed before moving on.
 	t.sub = sub
 	return nil
 }
@@ -60,7 +64,12 @@ func (t *natsTransport) Close() error {
 	if !t.IsOpen() {
 		return nil
 	}
-	t.conn.PublishRequest(t.replyTo, disconnect, nil)
+	t.writer.Close()
+	if !t.server {
+		// Signal server for a graceful disconnect.
+		t.conn.PublishRequest(t.replyTo, disconnect, nil)
+		t.conn.Flush() // TODO: Why is this flush needed?
+	}
 	if err := t.sub.Unsubscribe(); err != nil {
 		return err
 	}

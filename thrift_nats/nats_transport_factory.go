@@ -23,7 +23,7 @@ func NATSTransportFactory(conn *nats.Conn, subject string,
 		return nil, errors.New("thrift_nats: no reply subject on connect")
 	}
 
-	return NewNATSTransport(conn, inbox, reply, readTimeout), nil
+	return NewNATSTransport(conn, inbox, reply, readTimeout, false), nil
 }
 
 func connect(conn *nats.Conn, subj string, timeout time.Duration) (string, string, error) {

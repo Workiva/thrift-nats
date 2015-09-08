@@ -9,6 +9,8 @@ import (
 	"github.com/nats-io/nats"
 )
 
+const queue = "rpc"
+
 type natsServer struct {
 	conn                   *nats.Conn
 	subject                string
@@ -115,7 +117,7 @@ func (n *natsServer) Listen() error {
 }
 
 func (n *natsServer) AcceptLoop() error {
-	sub, err := n.conn.Subscribe(n.subject, func(msg *nats.Msg) {
+	sub, err := n.conn.QueueSubscribe(n.subject, queue, func(msg *nats.Msg) {
 		if msg.Reply != "" {
 			listenTo := nats.NewInbox()
 			client, err := n.accept(listenTo, msg.Reply)
@@ -128,12 +130,17 @@ func (n *natsServer) AcceptLoop() error {
 				log.Println("thrift_nats: error publishing transport inbox:", err)
 				client.Close()
 			}
+		} else {
+			log.Printf("thrift_nats: discarding invalid connect message %+v", msg)
 		}
 	})
 	if err != nil {
 		return err
 	}
 
+	n.conn.Flush()
+
+	log.Println("thrift_nats: server running...")
 	<-n.quit
 	return sub.Unsubscribe()
 }
@@ -187,7 +194,6 @@ func (n *natsServer) processRequests(client thrift.TTransport) error {
 		if err, ok := err.(thrift.TTransportException); ok && err.TypeId() == thrift.END_OF_FILE {
 			return nil
 		} else if err != nil {
-			log.Printf("error processing request: %s", err)
 			return err
 		}
 		if !ok {
