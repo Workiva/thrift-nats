@@ -43,7 +43,7 @@ func (t *natsTransport) Open() error {
 	sub, err := t.conn.Subscribe(t.listenTo, func(msg *nats.Msg) {
 		if msg.Reply == disconnect {
 			// Remote client is disconnecting.
-			t.Close()
+			t.writer.Close()
 			return
 		}
 		t.writer.Write(msg.Data)
@@ -64,15 +64,14 @@ func (t *natsTransport) Close() error {
 	if !t.IsOpen() {
 		return nil
 	}
-	t.writer.Close()
 	if !t.server {
 		// Signal server for a graceful disconnect.
 		t.conn.PublishRequest(t.replyTo, disconnect, nil)
-		t.conn.Flush() // TODO: Why is this flush needed?
 	}
 	if err := t.sub.Unsubscribe(); err != nil {
 		return err
 	}
+	t.conn.Flush()
 	t.sub = nil
 	return nil
 }
