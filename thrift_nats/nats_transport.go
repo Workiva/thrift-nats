@@ -17,14 +17,13 @@ type natsTransport struct {
 	sub      *nats.Subscription
 	reader   *timeoutReader
 	writer   *io.PipeWriter
-	server   bool
 }
 
 // NewNATSTransport returns a Thrift TTransport which uses the NATS messaging
 // system as the underlying transport. This TTransport can only be used with
 // NATSServer.
 func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string,
-	readTimeout time.Duration, server bool) thrift.TTransport {
+	readTimeout time.Duration) thrift.TTransport {
 
 	reader, writer := io.Pipe()
 	timeoutReader := newTimeoutReader(reader)
@@ -35,7 +34,6 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo string,
 		replyTo:  replyTo,
 		reader:   timeoutReader,
 		writer:   writer,
-		server:   server,
 	}
 }
 
@@ -64,10 +62,8 @@ func (t *natsTransport) Close() error {
 	if !t.IsOpen() {
 		return nil
 	}
-	if !t.server {
-		// Signal server for a graceful disconnect.
-		t.conn.PublishRequest(t.replyTo, disconnect, nil)
-	}
+	// Signal remote peer for a graceful disconnect.
+	t.conn.PublishRequest(t.replyTo, disconnect, nil)
 	if err := t.sub.Unsubscribe(); err != nil {
 		return err
 	}
