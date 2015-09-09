@@ -89,5 +89,5 @@ func (t *natsTransport) Flush() error {
 }
 
 func (t *natsTransport) RemainingBytes() uint64 {
-	return 0
+	return ^uint64(0) // We just don't know unless framed is used.
 }
