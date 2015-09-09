@@ -3,18 +3,27 @@ package thrift_nats
 import (
 	"log"
 	"runtime/debug"
+	"strconv"
+	"sync"
 	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/nats-io/nats"
 )
 
-const queue = "rpc"
+const (
+	queue                    = "rpc"
+	defaultHeartbeatDeadline = 5 * time.Second
+	maxMissedHeartbeats      = 3
+)
 
 type natsServer struct {
 	conn                   *nats.Conn
 	subject                string
 	clientTimeout          time.Duration
+	heartbeatDeadline      time.Duration
+	clients                map[string]thrift.TTransport
+	mu                     sync.Mutex
 	quit                   chan struct{}
 	processorFactory       thrift.TProcessorFactory
 	serverTransport        *natsServerTransport
@@ -24,38 +33,46 @@ type natsServer struct {
 	outputProtocolFactory  thrift.TProtocolFactory
 }
 
-// NewNATSServer6 returns a Thrift TServer which uses the NATS messaging
-// system as the underlying transport.
-func NewNATSServer6(
+// NewNATSServer returns a Thrift TServer which uses the NATS messaging system
+// as the underlying transport. The subject is the NATS subject used for
+// connection handshakes. The client timeout controls the read timeout on the
+// client connection (negative value for no timeout). The heartbeat deadline
+// controls how long clients have to respond with a heartbeat (negative value
+// for no heartbeats).
+func NewNATSServer(
 	conn *nats.Conn,
 	subject string,
 	clientTimeout time.Duration,
+	heartbeatDeadline time.Duration,
 	processor thrift.TProcessor,
 	transportFactory thrift.TTransportFactory,
 	protocolFactory thrift.TProtocolFactory) thrift.TServer {
 
-	return NewNATSServerFactory6(
+	return NewNATSServerFactory7(
 		conn,
 		subject,
 		clientTimeout,
+		heartbeatDeadline,
 		thrift.NewTProcessorFactory(processor),
 		transportFactory,
 		protocolFactory,
 	)
 }
 
-func NewNATSServerFactory6(
+func NewNATSServerFactory7(
 	conn *nats.Conn,
 	subject string,
 	clientTimeout time.Duration,
+	heartbeatDeadline time.Duration,
 	processorFactory thrift.TProcessorFactory,
 	transportFactory thrift.TTransportFactory,
 	protocolFactory thrift.TProtocolFactory) thrift.TServer {
 
-	return NewNATSServerFactory8(
+	return NewNATSServerFactory9(
 		conn,
 		subject,
 		clientTimeout,
+		heartbeatDeadline,
 		processorFactory,
 		transportFactory,
 		transportFactory,
@@ -64,10 +81,11 @@ func NewNATSServerFactory6(
 	)
 }
 
-func NewNATSServerFactory8(
+func NewNATSServerFactory9(
 	conn *nats.Conn,
 	subject string,
 	clientTimeout time.Duration,
+	heartbeatDeadline time.Duration,
 	processorFactory thrift.TProcessorFactory,
 	inputTransportFactory thrift.TTransportFactory,
 	outputTransportFactory thrift.TTransportFactory,
@@ -78,6 +96,8 @@ func NewNATSServerFactory8(
 		conn:                   conn,
 		subject:                subject,
 		clientTimeout:          clientTimeout,
+		heartbeatDeadline:      heartbeatDeadline,
+		clients:                make(map[string]thrift.TTransport),
 		processorFactory:       processorFactory,
 		serverTransport:        newNATSServerTransport(conn),
 		inputTransportFactory:  inputTransportFactory,
@@ -119,16 +139,30 @@ func (n *natsServer) Listen() error {
 func (n *natsServer) AcceptLoop() error {
 	sub, err := n.conn.QueueSubscribe(n.subject, queue, func(msg *nats.Msg) {
 		if msg.Reply != "" {
-			listenTo := nats.NewInbox()
-			client, err := n.accept(listenTo, msg.Reply)
+			var (
+				heartbeat   = nats.NewInbox()
+				listenTo    = nats.NewInbox()
+				client, err = n.accept(listenTo, msg.Reply, heartbeat)
+			)
 			if err != nil {
 				log.Println("thrift_nats: error accepting client transport:", err)
 				return
 			}
 
-			if err := n.conn.PublishRequest(msg.Reply, listenTo, nil); err != nil {
+			if n.isHeartbeating() {
+				n.mu.Lock()
+				n.clients[heartbeat] = client
+				n.mu.Unlock()
+			}
+
+			connectMsg := heartbeat + " " + strconv.FormatInt(int64(n.heartbeatDeadline), 10)
+			if err := n.conn.PublishRequest(msg.Reply, listenTo, []byte(connectMsg)); err != nil {
 				log.Println("thrift_nats: error publishing transport inbox:", err)
-				client.Close()
+				if n.isHeartbeating() {
+					n.remove(heartbeat)
+				}
+			} else if n.isHeartbeating() {
+				go n.acceptHeartbeat(heartbeat)
 			}
 		} else {
 			log.Printf("thrift_nats: discarding invalid connect message %+v", msg)
@@ -145,7 +179,46 @@ func (n *natsServer) AcceptLoop() error {
 	return sub.Unsubscribe()
 }
 
-func (n *natsServer) accept(listenTo, replyTo string) (thrift.TTransport, error) {
+func (n *natsServer) remove(heartbeat string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	client, ok := n.clients[heartbeat]
+	if !ok {
+		return
+	}
+	client.Close()
+	delete(n.clients, heartbeat)
+}
+
+func (n *natsServer) acceptHeartbeat(heartbeat string) {
+	missed := 0
+	recvHeartbeat := make(chan struct{})
+
+	sub, err := n.conn.Subscribe(heartbeat, func(msg *nats.Msg) {
+		recvHeartbeat <- struct{}{}
+	})
+	if err != nil {
+		log.Println("thrift_nats: error subscribing to heartbeat", heartbeat)
+		return
+	}
+
+	for {
+		select {
+		case <-time.After(time.Duration(n.heartbeatDeadline)):
+			missed += 1
+			if missed >= maxMissedHeartbeats {
+				log.Println("thrift_nats: client heartbeat expired")
+				n.remove(heartbeat)
+				sub.Unsubscribe()
+				return
+			}
+		case <-recvHeartbeat:
+			missed = 0
+		}
+	}
+}
+
+func (n *natsServer) accept(listenTo, replyTo, heartbeat string) (thrift.TTransport, error) {
 	client := n.serverTransport.AcceptNATS(listenTo, replyTo, n.clientTimeout)
 	if err := client.Open(); err != nil {
 		return nil, err
@@ -154,6 +227,7 @@ func (n *natsServer) accept(listenTo, replyTo string) (thrift.TTransport, error)
 		if err := n.processRequests(client); err != nil {
 			log.Println("thrift_nats: error processing request:", err)
 		}
+		n.remove(heartbeat)
 	}()
 	return client, nil
 }
@@ -201,4 +275,8 @@ func (n *natsServer) processRequests(client thrift.TTransport) error {
 		}
 	}
 	return nil
+}
+
+func (n *natsServer) isHeartbeating() bool {
+	return n.heartbeatDeadline > 0
 }
