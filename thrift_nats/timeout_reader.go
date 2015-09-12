@@ -9,8 +9,6 @@ import (
 	"git.apache.org/thrift.git/lib/go/thrift"
 )
 
-const bufferSize = 4096
-
 type timeout struct{}
 
 func (t timeout) Error() string {
@@ -30,7 +28,7 @@ type timeoutReader struct {
 }
 
 func newTimeoutReader(r io.Reader) *timeoutReader {
-	return &timeoutReader{buff: bufio.NewReaderSize(r, bufferSize), timeout: -1}
+	return &timeoutReader{buff: bufio.NewReader(r), timeout: -1}
 }
 
 func (r *timeoutReader) SetTimeout(t time.Duration) time.Duration {
