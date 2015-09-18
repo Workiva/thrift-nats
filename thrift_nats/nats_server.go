@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	queue                    = "rpc"
-	defaultHeartbeatDeadline = 5 * time.Second
-	maxMissedHeartbeats      = 3
+	queue               = "rpc"
+	maxMissedHeartbeats = 3
 )
 
 type natsServer struct {
@@ -155,7 +154,7 @@ func (n *natsServer) AcceptLoop() error {
 				n.mu.Unlock()
 			}
 
-			connectMsg := heartbeat + " " + strconv.FormatInt(int64(n.heartbeatDeadline), 10)
+			connectMsg := heartbeat + " " + strconv.FormatInt(int64(n.heartbeatDeadline*time.Millisecond), 10)
 			if err := n.conn.PublishRequest(msg.Reply, listenTo, []byte(connectMsg)); err != nil {
 				log.Println("thrift_nats: error publishing transport inbox:", err)
 				if n.isHeartbeating() {
