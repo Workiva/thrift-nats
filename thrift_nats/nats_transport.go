@@ -1,6 +1,7 @@
 package thrift_nats
 
 import (
+	"bytes"
 	"io"
 	"log"
 	"time"
@@ -9,7 +10,10 @@ import (
 	"github.com/nats-io/nats"
 )
 
-const disconnect = "DISCONNECT"
+const (
+	disconnect     = "DISCONNECT"
+	maxMessageSize = 1024 * 1024
+)
 
 type natsTransport struct {
 	conn              *nats.Conn
@@ -21,6 +25,7 @@ type natsTransport struct {
 	heartbeat         string
 	heartbeatInterval time.Duration
 	closed            chan struct{}
+	writeBuffer       *bytes.Buffer
 }
 
 // NewNATSTransport returns a Thrift TTransport which uses the NATS messaging
@@ -32,6 +37,7 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo, heartbeat string,
 	reader, writer := io.Pipe()
 	timeoutReader := newTimeoutReader(reader)
 	timeoutReader.SetTimeout(readTimeout)
+	buf := make([]byte, 0, maxMessageSize)
 	return &natsTransport{
 		conn:              conn,
 		listenTo:          listenTo,
@@ -41,6 +47,7 @@ func NewNATSTransport(conn *nats.Conn, listenTo, replyTo, heartbeat string,
 		heartbeat:         heartbeat,
 		heartbeatInterval: heartbeatInterval,
 		closed:            make(chan struct{}),
+		writeBuffer:       bytes.NewBuffer(buf),
 	}
 }
 
@@ -88,14 +95,22 @@ func (t *natsTransport) Read(p []byte) (int, error) {
 }
 
 func (t *natsTransport) Write(p []byte) (int, error) {
-	if err := t.conn.Publish(t.replyTo, p); err != nil {
-		return 0, thrift.NewTTransportExceptionFromError(err)
+	remaining := t.writeBuffer.Cap() - t.writeBuffer.Len()
+	if remaining < len(p) {
+		t.writeBuffer.Write(p[0:remaining])
+		if err := t.Flush(); err != nil {
+			return 0, thrift.NewTTransportExceptionFromError(err)
+		}
+		return t.Write(p[remaining:])
 	}
-	return len(p), nil
+	return t.writeBuffer.Write(p)
 }
 
 func (t *natsTransport) Flush() error {
-	return nil
+	data := t.writeBuffer.Bytes()
+	err := t.conn.Publish(t.replyTo, data)
+	t.writeBuffer.Reset()
+	return thrift.NewTTransportExceptionFromError(err)
 }
 
 func (t *natsTransport) RemainingBytes() uint64 {
