@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
-	"github.com/tylertreat/thrift-nats/example/gen-go/shared"
+	"github.com/Workiva/thrift-nats/example/gen-go/shared"
 )
 
 // (needed to ensure safety because of naive import list construction.)
