@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/tylertreat/thrift-nats/example/gen-go/shared"
-	"github.com/tylertreat/thrift-nats/example/gen-go/tutorial"
+	"github.com/Workiva/thrift-nats/example/gen-go/shared"
+	"github.com/Workiva/thrift-nats/example/gen-go/tutorial"
 )
 
 type CalculatorHandler struct {

@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"git.apache.org/thrift.git/lib/go/thrift"
+	"github.com/Workiva/thrift-nats/example/gen-go/tutorial"
+	"github.com/Workiva/thrift-nats/thrift_nats"
 	"github.com/nats-io/nats"
-	"github.com/tylertreat/thrift-nats/example/gen-go/tutorial"
-	"github.com/tylertreat/thrift-nats/thrift_nats"
 )
 
 func handleClient(client *tutorial.CalculatorClient) (err error) {
