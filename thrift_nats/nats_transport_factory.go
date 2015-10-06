@@ -32,7 +32,8 @@ func NATSTransportFactory(conn *nats.Conn, subject string,
 	deadline, err := strconv.ParseInt(heartbeatAndDeadline[1], 10, 64)
 	var interval time.Duration
 	if deadline > 0 {
-		interval = time.Duration(deadline - (deadline / 4))
+		deadline = deadline - (deadline / 4)
+		interval = time.Millisecond * time.Duration(deadline)
 	}
 
 	return NewNATSTransport(conn, inbox, msg.Reply, heartbeat, readTimeout, interval), nil
