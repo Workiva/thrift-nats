@@ -1,7 +1,12 @@
 project: golang
 language: golang
 
-script: go test -cover ./...
+before_install:
+  - go get git.apache.org/thrift.git/lib/go/thrift
+  - go get github.com/nats-io/nats
+  - go get github.com/nats-io/gnatsd
+
+script: go test ./test
 
 test_reports:
    - unit_tests.xml

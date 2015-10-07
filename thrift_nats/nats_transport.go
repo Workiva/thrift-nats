@@ -95,7 +95,7 @@ func (t *natsTransport) Read(p []byte) (int, error) {
 }
 
 func (t *natsTransport) Write(p []byte) (int, error) {
-	remaining := t.writeBuffer.Cap() - t.writeBuffer.Len()
+	remaining := maxMessageSize - t.writeBuffer.Len()
 	if remaining < len(p) {
 		t.writeBuffer.Write(p[0:remaining])
 		if err := t.Flush(); err != nil {
