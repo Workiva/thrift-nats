@@ -1,6 +1,7 @@
 project: golang
 language: golang
 
+before_install: go get -u ./...
 script: go test -cover ./...
 
 test_reports:
