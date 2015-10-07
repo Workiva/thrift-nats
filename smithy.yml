@@ -6,7 +6,7 @@ before_install:
   - go get github.com/nats-io/nats
   - go get github.com/nats-io/gnatsd
 
-script: go test -cover ./...
+script: go test ./test
 
 test_reports:
    - unit_tests.xml
