@@ -1,7 +1,11 @@
 project: golang
 language: golang
 
-before_install: go get -u ./...
+before_install:
+  - go get git.apache.org/thrift.git/lib/go/thrift
+  - go get github.com/nats-io/nats
+  - go get github.com/nats-io/gnatsd
+
 script: go test -cover ./...
 
 test_reports:
