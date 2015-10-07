@@ -29,10 +29,6 @@ func TestRPC(t *testing.T) {
 	testRPCHappyPath(t, thrift.NewTJSONProtocolFactory())
 	testRPCHappyPath(t, thrift.NewTBinaryProtocolFactoryDefault())
 	testRPCHappyPath(t, thrift.NewTCompactProtocolFactory())
-
-	// TODO: Figure out why simplejson doesn't work.
-	//testRPCHappyPath(t, thrift.NewTSimpleJSONProtocolFactory())
-
 	testRPCNoServer(t)
 }
 
