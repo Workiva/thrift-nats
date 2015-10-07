@@ -1,0 +1,8 @@
+project: golang
+language: golang
+
+script:
+   - ./scripts/run_tests_smithy.sh
+
+test_reports:
+   - unit_tests.xml
