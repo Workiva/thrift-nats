@@ -26,6 +26,7 @@ type natsTransport struct {
 	heartbeatInterval time.Duration
 	closed            chan struct{}
 	writeBuffer       *bytes.Buffer
+	readTimeout       time.Duration
 }
 
 // NewNATSTransport returns a Thrift TTransport which uses the NATS messaging
@@ -34,24 +35,24 @@ type natsTransport struct {
 func NewNATSTransport(conn *nats.Conn, listenTo, replyTo, heartbeat string,
 	readTimeout, heartbeatInterval time.Duration) thrift.TTransport {
 
-	reader, writer := io.Pipe()
-	timeoutReader := newTimeoutReader(reader)
-	timeoutReader.SetTimeout(readTimeout)
-	buf := make([]byte, 0, maxMessageSize)
 	return &natsTransport{
 		conn:              conn,
 		listenTo:          listenTo,
 		replyTo:           replyTo,
-		reader:            timeoutReader,
-		writer:            writer,
 		heartbeat:         heartbeat,
 		heartbeatInterval: heartbeatInterval,
-		closed:            make(chan struct{}),
-		writeBuffer:       bytes.NewBuffer(buf),
+		readTimeout:       readTimeout,
 	}
 }
 
 func (t *natsTransport) Open() error {
+	t.closed = make(chan struct{})
+	t.writeBuffer = bytes.NewBuffer(make([]byte, 0, maxMessageSize))
+	reader, writer := io.Pipe()
+	timeoutReader := newTimeoutReader(reader)
+	timeoutReader.SetTimeout(t.readTimeout)
+	t.reader = timeoutReader
+	t.writer = writer
 	sub, err := t.conn.Subscribe(t.listenTo, func(msg *nats.Msg) {
 		if msg.Reply == disconnect {
 			// Remote client is disconnecting.
@@ -86,6 +87,7 @@ func (t *natsTransport) Close() error {
 	}
 	t.conn.Flush()
 	t.sub = nil
+	close(t.closed)
 	return nil
 }
 
