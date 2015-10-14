@@ -108,6 +108,9 @@ func (t *natsTransport) Write(p []byte) (int, error) {
 
 func (t *natsTransport) Flush() error {
 	data := t.writeBuffer.Bytes()
+	if len(data) == 0 {
+		return nil
+	}
 	err := t.conn.Publish(t.replyTo, data)
 	t.writeBuffer.Reset()
 	return thrift.NewTTransportExceptionFromError(err)
