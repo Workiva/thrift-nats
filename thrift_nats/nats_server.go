@@ -23,6 +23,7 @@ type natsServer struct {
 	heartbeatDeadline      time.Duration
 	clients                map[string]thrift.TTransport
 	mu                     sync.Mutex
+	closed                 bool
 	quit                   chan struct{}
 	processorFactory       thrift.TProcessorFactory
 	serverTransport        *natsServerTransport
@@ -172,6 +173,9 @@ func (n *natsServer) AcceptLoop() error {
 	}
 
 	n.conn.Flush()
+	n.mu.Lock()
+	n.closed = false
+	n.mu.Unlock()
 
 	log.Println("thrift_nats: server running...")
 	<-n.quit
@@ -202,6 +206,13 @@ func (n *natsServer) acceptHeartbeat(heartbeat string) {
 	}
 
 	for {
+		n.mu.Lock()
+		if n.closed {
+			n.mu.Unlock()
+			return
+		}
+		n.mu.Unlock()
+
 		select {
 		case <-time.After(time.Duration(n.heartbeatDeadline)):
 			missed += 1
@@ -242,6 +253,9 @@ func (n *natsServer) Serve() error {
 func (n *natsServer) Stop() error {
 	n.quit <- struct{}{}
 	n.serverTransport.Interrupt()
+	n.mu.Lock()
+	n.closed = true
+	n.mu.Unlock()
 	return nil
 }
 
