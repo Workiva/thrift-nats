@@ -43,7 +43,7 @@ func runServer(transportFactory thrift.TTransportFactory,
 
 	handler := NewCalculatorHandler()
 	processor := tutorial.NewCalculatorProcessor(handler)
-	server := thrift_nats.NewNATSServer(conn, "foo", -1, 5*time.Second, processor,
+	server := thrift_nats.NewNATSServer(conn, "foo", -1, time.Minute, processor,
 		transportFactory, protocolFactory)
 
 	fmt.Println("Starting the NATS server connecting to", addr)
