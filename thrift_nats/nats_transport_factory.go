@@ -30,6 +30,9 @@ func NATSTransportFactory(conn *nats.Conn, subject string,
 	}
 	heartbeat := heartbeatAndDeadline[0]
 	deadline, err := strconv.ParseInt(heartbeatAndDeadline[1], 10, 64)
+	if err != nil {
+		return nil, err
+	}
 	var interval time.Duration
 	if deadline > 0 {
 		deadline = deadline - (deadline / 4)
@@ -54,6 +57,5 @@ func connect(conn *nats.Conn, subj string, timeout time.Duration) (*nats.Msg, st
 	if err != nil {
 		return nil, "", err
 	}
-	s.Unsubscribe()
 	return msg, inbox, nil
 }
