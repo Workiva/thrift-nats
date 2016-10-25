@@ -1,5 +1,7 @@
 # thrift-nats
 
+__Disclaimer: This repo is no longer maintained.__
+
 Support for using [NATS](http://nats.io/) as a [Thrift](https://thrift.apache.org/) RPC transport.
 
 ## Server Usage
