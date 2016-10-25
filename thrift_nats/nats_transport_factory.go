@@ -60,7 +60,7 @@ func NATSTransportFactory(conn *nats.Conn, subject string,
 
 func connect(conn *nats.Conn, subj string, timeout time.Duration) (*nats.Msg, string, error) {
 	inbox := nats.NewInbox()
-	s, err := conn.Subscribe(inbox, nil)
+	s, err := conn.SubscribeSync(inbox)
 	if err != nil {
 		return nil, "", err
 	}
